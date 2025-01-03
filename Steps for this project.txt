@@ -1,0 +1,234 @@
+											Building a Secure Multi-Tier Web Application Architecture on AWS :-
+
+Procedure module wise:
+
+----------------------------------------------------------------------------------------------------------------------
+
+Module I.	Set up a secure connection between the public instance and the private instance located in different regions:
+
+1.	Create a VPC with a CIDR block of “172.31.0.0/16” in the Mumbai region.
+2.	Create a subnet within the VPC and modify its settings to enable the assignment of public IP addresses.
+3.	Create an Internet Gateway and attach it to the VPC.
+4.	Update the VPC's route table to associate it with the subnet and add a route to the Internet Gateway linked to that VPC.
+5.	Create a security group for the VPC with inbound rules that allow HTTP and HTTPS traffic from anywhere, as well as SSH and ICMP (IPv4) for the specified IP range.
+6.	Launch a web server (public instance) within the public VPC to host the web application.
+7.	Similar, create another VPC for a private network, ensuring that the subnet does not have a public IP enabled and that no Internet Gateway is required.
+8.	Create a security group for the private instance that allows traffic only from the public instance's CIDR block for MySQL, SSH, and ICMP ports.
+9.	Launch an App Server (private instance) under the private VPC to configure RDS and S3 privately. 
+10.	Now establish a VPC peering connection between the public instance and the private instance by providing the request and acceptor VPC ID:
+11.	Update the route table of both instances to allow the peering connection by adding routes with the opposite CIDR block as the destination.
+12.	After establishing the peering connection, test the connectivity between the public and private instances using ping and ssh with the .pem file.
+•	Copy the PEM file of the private instance to the public instance for login access.
+•	chmod 400 "singapore-key.pem"
+•	ssh -i "singapore-key.pem" ubuntu@10.0.0.10
+
+=================================================================================================================================================================================================================
+
+Module II.	Configuring the NAT gateway to private instance and install the required packages and clone the code from GitHub repository:
+
+1.	Create a public subnet within the VPC that hosts the private instance and update the route table to enable access to the target group through the internet gateway, allowing traffic from any source.
+2.	Set up a NAT Gateway in the public subnet and associate an Elastic IP with it and Wait for a few minutes until the status of the NAT Gateway changes to "Available."
+3.	Now, update the route table of the private of target NAT gateway by giving the destination anyway.
+Note: For the private instance, configure the security group to allow all traffic (required port) from the public VPC CIDR block and outbound to anyway.
+4.	Now, on the public instance, install the required packages.
+•	sudo apt install upgrade
+•	sudo apt install apache2
+•	sudo apt install php php-mysqlnd 
+
+5.	Now, on the private instance, install the required packages.
+•	sudo apt install upgrade
+•	sudo apt install mariadb-server    #For RDS instance configuration.
+•	sudo apt install s3fs   #For S3 Bucket configuration.
+
+6.	clone the code from the GitHub repository using the Git technology:
+Git clone https://github.com/varunsimha-MP/Php_CRUD-Basic-.git  
+
+7.	On the public instance, set up the web application using Apache2. 
+•	Transfer the previously cloned code to the /var/www/html directory.
+
+8.	After transferring the code, check if the static/index file is working by accessing it through the public instance's public IP address as the URL.
+
+=================================================================================================================================================================================================================
+
+Module III.	Create an RDS instance, set up the connection to the private instance and configuration accordingly:
+
+1.	Create a role that provides access to the instance by attaching the RDS full access policy.
+2.	Now, attach the RDS full access role to the private instance.
+3.	Now, create the RDS database in the same region as the private instance. Choose the standard method and select "MySQL" as the database engine according to the requirements.
+4.	Always choose the latest engine version or required for your and select the "Free Tier" template as we are doing for learning purposes.
+5.	Provide the database name and the credentials for logging into the RDS instance. Additionally, configure the CPU, memory, and storage according to the requirements.
+6.	For connectivity, choose to set up the connection now and select the private instance.
+Note: The connection to the instance can be established after the RDS creation is complete.
+7.	Now, select the automatic options and leave the settings as default, then click on "Create."
+8.	Wait for a few minutes until the RDS status changes to "Available."
+9.	Now, from the private instance configure MariaDB on the Private Instance:
+
+•	Log in to the RDS instance using the RDS endpoint:
+      Syntax: mysql -h <RDS_ENDPOINT> -u admin -p
+      mysql -h my-website-db.c1wuawkouym0.ap-southeast-1.rds.amazonaws.com-u admin -p
+•	Enter the password when prompted to access the RDS instance.
+•	After logging in, create a database and grant full access to the admin user for the newly created database.
+      		CREATE DATABASE my_db;
+     		 GRANT ALL PRIVILEGES ON my_db.* TO 'admin'@'%';
+    		FLUSH PRIVILEGES;
+Exit;   
+10.	Use the code transferred earlier from the public to the private instance, now import the SQL file into the RDS database:
+    		mysql -h <RDS_ENDPOINT> -u admin -p my_db < /tmp/php_crud.sql
+11.	Now, go to the public instance and update the database connection file.
+ 	     {
+       		 "db_host": "<RDS_ENDPOINT>",
+      		  "db_user": "admin",
+        		"db_password": "<Your_Password>",
+        		"db_name": "my_db"
+    	  }
+
+12.	After updating the database connection file, test the database connectivity on the public instance by running:
+   		 php dbconnect.php
+Note: If no error occurs, the connection is working fine.
+13.	To test if the database web application is working, use the public instance's IP address as the URL. Fill out the form and submit it to verify the functionality.
+14.	Let's check from the instance's end: the changes are reflecting, and everything is working as expected.
+
+=================================================================================================================================================================================================================
+
+Module IV.	Configure the S3 bucket for the private instance using a VPC endpoint:
+
+1.	Create a role that grants access to the instance by attaching the "AmazonS3FullAccess" policy.
+2.	Now, attach the "S3 Full Access" role to the private instance.
+3.	Now, create an S3 bucket and block all public access to it.
+4.	Navigate to the bucket's access points, create a new access point by providing a name, selecting the private VPC, and ensuring that public access is blocked.
+5.	Create a VPC endpoint with an S3 gateway and attach it to the private instance's route table.
+6.	Wait for a few minutes until the VPC endpoint is automatically updated in the attached route table and the outbound rule of the private instance's security group.
+7.	Goto Edit bucket policy give the below code which will Locking down Amazon S3 bucket to VPC access only.
+Note: Outside VPC even from the console we can’t access it.
+8.	Now, from the private instance, create a mount point directory:
+•	sudo mkdir -p /mnt/s3bucket
+
+9.	Mounting the S3 bucket Using IAM Role:
+Note: Earlier, we have installed the s3fs package on the private instance.
+•	Mount the S3 bucket using `s3fs`:
+Syntax: s3fs <bucket-name> /mnt/s3bucket -o iam_role=auto -o url=https://s3.<region>.amazonaws.com -o use_path_request_style
+s3fs mybucketmount01 /mnt/s3bucket -o iam_role=auto -o url=https://s3.ap-southeast-1.amazonaws.com -o use_path_request_style
+   Replace:
+   - `<bucket-name>` with your S3 bucket name.
+   - `<region>` with your AWS region (e.g., `us-east-1`).
+
+   Options Explained:
+   - `-o iam_role=auto`: Automatically retrieves credentials from the attached IAM role.
+   - `-o url`: Directs requests to the S3 service in the specified region.
+   - `-o use_path_request_style`: Enables path-style access, necessary for certain configurations.
+
+10.	Test the mount point before making it persistent.
+•	Check the file system - df -hT
+•	Create a file on the instance and check if it is reflected in the S3 bucket.
+
+11.	Persist the mount in the “/etc/fstat” file:
+•	Edit the file:   sudo vi /etc/fstab
+•	Add the following entry:
+ s3fs#<bucket-name> /mnt/s3bucket fuse _netdev,iam_role=auto,allow_other,use_path_request_style,url=https://s3.<region>.amazonaws.com 0 0
+   Options Explained: 
+   - `_netdev`: Ensures the mount is dependent on network services.
+   - `allow_other`: Allows access to users other than the owner.
+
+12.	Save the file and test:
+•	sudo mount -a
+
+
+=================================================================================================================================================================================================================
+
+Module V.	Configure automatic power off and on for an EC2 instance using AWS Lambda and Event Bridge:
+
+1.	Create a role that grants access to the Lambda service by attaching the "EC2 Full Access" policy.
+2.	Now, create a Lambda function by selecting the runtime (type of language) and architecture, and then assign the "EC2 Full Access" role to it.
+3.	After creation, provide the following Python code to execute:
+Note: The code below will toggle the instance power off/on based on the event-driven time.
+----------------------------------------------------------------------------------------------------------
+import boto3
+import logging
+
+# Configure logging
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
+
+INSTANCE_DETAILS = [
+    {"instance_id": "i-0ddde86ee005cbab5", "region": "ap-southeast-1"}, # Private instance  
+    {"instance_id": "i-0e82be1a040318011", "region": "ap-south-1"}   # Public instance
+]
+
+def toggle_instance_state(instance_id, region):
+    ec2 = boto3.client('ec2', region_name=region)
+    try:
+        # Get the current state of the instance
+        response = ec2.describe_instances(InstanceIds=[instance_id])
+        state = response['Reservations'][0]['Instances'][0]['State']['Name']
+        logger.info(f"Instance {instance_id} in region {region} is currently {state}")
+
+        # Toggle the state
+        if state == "stopped":
+            ec2.start_instances(InstanceIds=[instance_id])
+            logger.info(f"Started instance {instance_id} in region {region}")
+        elif state == "running":
+            ec2.stop_instances(InstanceIds=[instance_id])
+            logger.info(f"Stopped instance {instance_id} in region {region}")
+        else:
+            logger.warning(f"Instance {instance_id} in region {region} is in an unsupported state: {state}")
+    except Exception as e:
+        logger.error(f"Failed to toggle state for instance {instance_id} in region {region}: {e}")
+
+def lambda_handler(event, context):
+    try:
+        for instance in INSTANCE_DETAILS:
+            toggle_instance_state(instance["instance_id"], instance["region"])
+        
+        return {"statusCode": 200, "body": "Toggled instance states successfully."}
+    except Exception as e:
+        logger.error(f"Error: {e}")
+        return {"statusCode": 500, "body": str(e)}
+-------------------------------------------------------------------------------------------------------------
+Note: Edit the region and instance ID in the code according to the specific requirements.
+
+4.	Now, click on Deploy to deploy the code. Then, change the configuration time to 10 seconds for the Lambda function and test the code.
+
+5.	Create an Event Bridge Scheduler with the following configuration:
+•	Set the schedule to recur daily.
+•	Set the time zone.
+•	Use the cron expression: (0 6,18 ? * * *).
+•	Turn off the flexible time window.
+Note: The cron expression will trigger daily at 6 AM and 6 PM.
+
+6.	After specifying the schedule, select the target as Lambda Function.
+
+7.	Then, configure the basic settings and click on Create.
+
+=================================================================================================================================================================================================================
+
+Module VI.	Setting up a secure web application using Route 53, a Load Balancer, and ACM:
+
+1.	Purchased or registered a domain (in this case, it was purchased through BigRock, a third-party provider).
+2.	Create a hosted zone on Route 53 by providing the domain name you purchased and selecting the type as Public Hosted Zone.
+3.	After creating the hosted zone, copy the NS (Name Server) record values and paste them into the Name Server settings where you purchased the domain.
+4.	Now, create a certificate in ACM for the region where the public instance is located. Choose the certificate type as Public and leave the remaining settings as default.
+5.	After the certificate is created, copy the CNAME record and then add it to Route 53.
+6.	Wait for a few minutes for the validation to complete, and the status will change to Issued in the ACM service.
+7.	Now, create the Target Group for the Load Balancer, selecting the target type as Instance, and leave the remaining settings at their default values.
+8.	Here, selects the instance that needs to be registered as the target for the target group.
+9.	After creating the target group, create the Application Load Balancer to allow secure communication to the instance.
+10.	Configure the internet-facing and choose the VPC and its minimum two availability zone where instance lies.
+11.	On the Listeners and Routing section, add both HTTP and HTTPS listeners. For both listeners, set the default action to "forward to target group".
+12.	Since we have added the HTTPS listener, choose the default security policy. For the certificate, select from ACM and choose the certificate that was created earlier. Then, click on Create.
+13.	This will take a few minutes to set up. Once the process is complete, you can edit the HTTP listener settings.
+14.	While editing the HTTP listener, change the default action to "Redirect to URL" and set the URL port to HTTPS – 443. This ensures that whenever a user tries to access the application using HTTP, they will be automatically redirected to HTTPS for a secure connection.
+15.	After the Load Balancer is active, the target group will begin to register the instances, and the status of the instances should show as healthy. This indicates that the instances are properly receiving traffic and responding as expected through the Load Balancer.
+16.	Now, in Route 53, create a record for HTTPS by setting the traffic routing value to the application Load Balancer and specifying its region, along with the Load Balancer's DNS name.
+
+
+Note: We can check the DNS from all the location where it is accessible using the “whatsmydns” website:
+
+
+
+
+
+
+
+
+
+
